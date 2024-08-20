@@ -1,0 +1,84 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+const schema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
+const App = () => {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    defaultValues: {
+      email: "test@gmail.com",
+    },
+    resolver: zodResolver(schema),
+  });
+
+  const onSubmit = async (data) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log(data);
+  };
+  return (
+    <div className="border w-screen h-screen flex justify-center items-center p-5 bg-slate-300">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="min-h-1/2 rounded p-5 bg-slate-50 shadow-md shadow-black flex flex-col justify-center text-slate-900"
+      >
+        <h2 className="text-center italic text-3xl">Login</h2>
+
+        <input
+          type="text"
+          {...register(
+            "email"
+            // , {
+            //   required: "Email is required",
+            //   // pattern: /^[a-z0-9_]+@[a-z0-9_]+\.[a-z]{2,4}$/,
+            //   validate: (value) => {
+            //     if (!value.includes("@")) {
+            //       return "Email incorrect";
+            //     }
+            //     return true;
+            //   },
+            // }
+          )}
+          placeholder="example@email.com"
+          className="bg-transparent border-blue-500 placeholder:text-blue-500 p-3 outline-none border-b-2 pb-1 mt-5"
+        />
+        {errors.email && (
+          <div className="text-sm text-red-500">{errors.email?.message}</div>
+        )}
+        <input
+          type="password"
+          {...register(
+            "password"
+            // , {
+            //   required: "Password is required",
+            //   minLength: {
+            //     value: 8,
+            //     message: "Password must have at least 8 characters",
+            //   },
+            // }
+          )}
+          placeholder="********"
+          className="bg-transparent border-blue-500 placeholder:text-blue-500 p-3 outline-none border-b-2 pb-1 mt-5"
+        />
+        {errors.password && (
+          <div className="text-sm text-red-500">{errors.password?.message}</div>
+        )}
+        <button className="px-4 py-2 border rounded bg-blue-600 text-white hover:bg-blue-500 active:scale-90 my-5">
+          {isSubmitting ? (
+            <span className="w-5 h-5 bg-transparent inline-block rounded-full border-2 animate-pulse"></span>
+          ) : (
+            "Login"
+          )}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default App;

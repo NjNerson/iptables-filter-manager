@@ -1,0 +1,5 @@
+1)Activate env
+ source ./venv/bin/Activate
+
+ 2)run server
+ sudo ./venv/bin/python3 app.py

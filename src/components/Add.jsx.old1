@@ -1,0 +1,492 @@
+import React, { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import Selection from "./ForwardedSelect";
+import { SelectItem } from "./ui/select";
+import { IoAddSharp } from "react-icons/io5";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import { Button } from "./ui/button";
+import Badge from "./Badge";
+
+// Regex patterns for IP and CIDR validation
+const ipWithCIDRPattern =
+  /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\/([1-9]|[1-2][0-9]|3[0-2]))?$/;
+const portPattern = /^(?:[0-9]{1,5})$/;
+
+const ipRegex =
+  /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
+const cidrRegex =
+  /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-2][0-9]|3[0-2])$/;
+
+const portNumberRegex =
+  /^(?:[0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$/;
+
+const isValidIPRange = (start, end) => {
+  if (!start || !end) return true;
+  const startParts = start.split(".").map(Number);
+  const endParts = end.split(".").map(Number);
+  return startParts.every((part, index) => part <= endParts[index]);
+};
+
+// Zod schema for form validation
+const schema = z
+  .object({
+    chain: z.string().optional(),
+    sip: z
+      .string()
+      .optional()
+      .refine(
+        (value) => ipRegex.test(value) || cidrRegex.test(value),
+        "Invalid IP or CIDR format"
+      ),
+    dip: z
+      .string()
+      .optional()
+      .refine(
+        (value) => ipRegex.test(value) || cidrRegex.test(value),
+        "Invalid IP or CIDR format"
+      ),
+    rsip: z
+      .string()
+      .optional()
+      .refine((value) => ipRegex.test(value), "Invalid IP format"),
+    rsip2: z
+      .string()
+      .optional()
+      .refine((value) => ipRegex.test(value), "Invalid IP format"),
+    rdip: z
+      .string()
+      .optional()
+      .refine((value) => ipRegex.test(value), "Invalid IP format"),
+    rdip2: z
+      .string()
+      .optional()
+      .refine((value) => ipRegex.test(value), "Invalid IP format"),
+    protocol: z.string().max(8).optional(),
+    sport: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          portPattern.test(value) &&
+          Number(value) >= 0 &&
+          Number(value) <= 65535,
+        "Invalid port"
+      ),
+    dport: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          portPattern.test(value) &&
+          Number(value) >= 0 &&
+          Number(value) <= 65535,
+        "Invalid port"
+      ),
+    rsport: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          portPattern.test(value) &&
+          Number(value) >= 0 &&
+          Number(value) <= 65535,
+        "Invalid port"
+      ),
+    rsport2: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          portPattern.test(value) &&
+          Number(value) >= 0 &&
+          Number(value) <= 65535,
+        "Invalid port"
+      ),
+    rdport: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          portPattern.test(value) &&
+          Number(value) >= 0 &&
+          Number(value) <= 65535,
+        "Invalid port"
+      ),
+    rdport2: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          portPattern.test(value) &&
+          Number(value) >= 0 &&
+          Number(value) <= 65535,
+        "Invalid port"
+      ),
+    target: z.string().optional(),
+  })
+  .refine((data) => data.sip !== data.dip, {
+    message: "Source IP and Destination IP must be different",
+    path: ["sip", "dip"],
+  })
+  .refine((data) => isValidIPRange(data.rsip, data.rsip2), {
+    message: "Invalid range for source IPs",
+    path: ["rsip", "rsip2"],
+  })
+  .refine((data) => isValidIPRange(data.rdip, data.rdip2), {
+    message: "Invalid range for destination IPs",
+    path: ["rdip", "rdip2"],
+  })
+  .refine((data) => data.rsport < data.rsport2, {
+    message: "Source port range is invalid",
+    path: ["rsport", "rsport2"],
+  })
+  .refine((data) => data.rdport < data.rdport2, {
+    message: "Destination port range is invalid",
+    path: ["rdport", "rdport2"],
+  });
+
+const Add = () => {
+  const [SIP, setSIP] = useState(true);
+  const [DIP, setDIP] = useState(false);
+  const [RSIP, setRSIP] = useState(false);
+  const [RDIP, setRDIP] = useState(false);
+  const [PRO, setPRO] = useState(false);
+  const [DPORT, setDPORT] = useState(false);
+  const [SPORT, setSPORT] = useState(false);
+  const [RDPORT, setRDPORT] = useState(false);
+  const [RSPORT, setRSPORT] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(schema),
+  });
+
+  const onSubmit = (data) => console.log(data);
+
+  useEffect(() => {
+    if (RSIP) {
+      setSIP(false);
+    }
+  }, [RSIP]);
+
+  useEffect(() => {
+    if (RDIP) {
+      setDIP(false);
+    }
+  }, [RDIP]);
+
+  useEffect(() => {
+    if (SIP) {
+      setRSIP(false);
+    }
+  }, [SIP]);
+  useEffect(() => {
+    if (DIP) {
+      setRSIP(false);
+    }
+  }, [DIP]);
+
+  useEffect(() => {
+    if (RSPORT) {
+      setSPORT(false);
+    }
+  }, [RSPORT]);
+  useEffect(() => {
+    if (RDPORT) {
+      setDPORT(false);
+    }
+  }, [RDPORT]);
+
+  useEffect(() => {
+    if (SPORT) {
+      setRSPORT(false);
+    }
+  }, [SPORT]);
+  useEffect(() => {
+    if (DPORT) {
+      setRDPORT(false);
+    }
+  }, [DPORT]);
+
+  return (
+    <>
+      <div className="params w-full py-4 ">
+        <h1 className="text-red-400">Parameters :</h1>
+        <div className="flex flex-wrap gap-y-2 p-2">
+          <Badge value="source ip" setActive={setSIP} active={SIP} />
+          <Badge value="destination ip" setActive={setDIP} active={DIP} />
+          <Badge value="source port" setActive={setSPORT} active={SPORT} />
+          <Badge value="destination port" setActive={setDPORT} active={DPORT} />
+          <Badge
+            value="range source port"
+            setActive={setRSPORT}
+            active={RSPORT}
+          />
+          <Badge
+            value="range destination port"
+            setActive={setRDPORT}
+            active={RDPORT}
+          />
+          <Badge value="protocol" setActive={setPRO} active={PRO} />
+          <Badge value="range source ip" setActive={setRSIP} active={RSIP} />
+          <Badge
+            value="range destination ip"
+            setActive={setRDIP}
+            active={RDIP}
+          />
+        </div>
+      </div>
+      <hr className="border-slate-200" />
+      <form onSubmit={handleSubmit(onSubmit)} className="Form pt-5">
+        {/* CHAIN */}
+        <div className="fields-m-5">
+          <Label className="text-slate-800" htmlFor="chain">
+            Chain
+          </Label>
+          <Selection id="chain" holder={"CHAIN"}>
+            <SelectItem value="INPUT">INPUT</SelectItem>
+            <SelectItem value="OUTPUT">OUTPUT</SelectItem>
+            <SelectItem value="FORWARD">FORWARD</SelectItem>
+          </Selection>
+        </div>
+        {/* SIP */}
+        <div className="pt-2 flex flex-wrap pl-5">
+          {SIP && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="sip">
+                Source IP
+              </Label>
+              <Input
+                id="sip"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="192.168.53.103 or 192.168.0.0/24"
+                {...register("sip")}
+              />
+              {errors.sip && (
+                <p className="text-red-500">{errors.sip.message}</p>
+              )}
+            </div>
+          )}
+
+          {RSIP && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="rsip">
+                Range Source IP
+              </Label>
+              <Input
+                id="rsip"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="192.168.53.103"
+                {...register("rsip")}
+              />
+              <Input
+                id="rsip2"
+                type="text"
+                className="w-80 mt-2 fields-shadow"
+                placeholder="192.168.53.224"
+                {...register("rsip2")}
+              />
+              {errors.rsip && (
+                <p className="text-red-500">{errors.rsip.message}</p>
+              )}
+              {errors.rsip2 && (
+                <p className="text-red-500">{errors.rsip2.message}</p>
+              )}
+            </div>
+          )}
+          {DIP && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="dip">
+                Destination IP
+              </Label>
+              <Input
+                id="dip"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="192.168.53.103 or 192.168.0.0/24"
+                {...register("dip")}
+              />
+              {errors.dip && (
+                <p className="text-red-500">{errors.dip.message}</p>
+              )}
+            </div>
+          )}
+
+          {RDIP && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="rdip">
+                Range Destination IP
+              </Label>
+              <Input
+                id="rdip"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="192.168.53.103"
+                {...register("rdip")}
+              />
+              <Input
+                id="rdip2"
+                type="text"
+                className="w-80 mt-2 fields-shadow"
+                placeholder="192.168.53.224"
+                {...register("rdip2")}
+              />
+              {errors.rdip && (
+                <p className="text-red-500">{errors.rdip.message}</p>
+              )}
+              {errors.rdip2 && (
+                <p className="text-red-500">{errors.rdip2.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* SPORT */}
+          {SPORT && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="sport">
+                Source Port
+              </Label>
+              <Input
+                id="sport"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="1024-65535 or 80"
+                {...register("sport")}
+              />
+              {errors.sport && (
+                <p className="text-red-500">{errors.sport.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* RSPORT */}
+          {RSPORT && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="rsport">
+                Range Source Port
+              </Label>
+              <Input
+                id="rsport"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="1024"
+                {...register("rsport")}
+              />
+              <Input
+                id="rsport2"
+                type="text"
+                className="w-80 mt-2 fields-shadow"
+                placeholder="65535"
+                {...register("rsport2")}
+              />
+              {errors.rsport && (
+                <p className="text-red-500">{errors.rsport.message}</p>
+              )}
+              {errors.rsport2 && (
+                <p className="text-red-500">{errors.rsport2.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* DPORT */}
+          {DPORT && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="dport">
+                Destination Port
+              </Label>
+              <Input
+                id="dport"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="1024-65535 or 80"
+                {...register("dport")}
+              />
+              {errors.dport && (
+                <p className="text-red-500">{errors.dport.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* RDPORT */}
+          {RDPORT && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="rdport">
+                Range Destination Port
+              </Label>
+              <Input
+                id="rdport"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="1024"
+                {...register("rdport")}
+              />
+              <Input
+                id="rdport2"
+                type="text"
+                className="w-80 mt-2 fields-shadow"
+                placeholder="65535"
+                {...register("rdport2")}
+              />
+              {errors.rdport && (
+                <p className="text-red-500">{errors.rdport.message}</p>
+              )}
+              {errors.rdport2 && (
+                <p className="text-red-500">{errors.rdport2.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* PROTOCOL */}
+          {PRO && (
+            <div className="fields-m-5">
+              <Label className="text-slate-800" htmlFor="protocol">
+                Protocol
+              </Label>
+              <Input
+                id="protocol"
+                type="text"
+                className="w-80 fields-shadow"
+                placeholder="tcp or udp"
+                {...register("protocol")}
+              />
+              {errors.protocol && (
+                <p className="text-red-500">{errors.protocol.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* TARGET */}
+          <div className="fields-m-5">
+            <Label className="text-slate-800" htmlFor="target">
+              Target
+            </Label>
+            <Selection id="target" holder={"TARGET"}>
+              <SelectItem value="ACCEPT">ACCEPT</SelectItem>
+              <SelectItem value="DROP">DROP</SelectItem>
+              <SelectItem value="REJECT">REJECT</SelectItem>
+            </Selection>
+          </div>
+
+          {/* Submit Button */}
+          <div className="pt-2">
+            <Button type="submit" className="w-full">
+              <IoAddSharp className="mr-2" />
+              Add
+            </Button>
+          </div>
+        </div>
+      </form>
+    </>
+  );
+};
+
+export default Add;
